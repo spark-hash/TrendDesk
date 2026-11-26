@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+.pytest_cache/
+data/
+*.log
+.runtime.json
+dist/
+test-results/
+.env
+.env.*
+*.db
+*.db-*
+*.sqlite*
+*.key
+*.pem
+*.pfx
+.tooling/

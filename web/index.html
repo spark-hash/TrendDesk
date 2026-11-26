@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>TrendDesk · 美股趋势工作台</title><link rel="icon" href="/static/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="/static/style.css"></head>
+<body>
+<aside class="rail">
+<a class="brand" href="#market" aria-label="TrendDesk 行情看板"><span class="brand-mark">T↗</span> TrendDesk</a>
+<nav class="primary-nav" aria-label="工作台导航">
+<a href="#market" data-area="market">行情看板</a><a href="#studies" data-area="stock">个股研究</a>
+<a href="#macro-section" data-area="news">宏观与新闻</a><a href="#events-section" data-area="events">信号与回测</a>
+</nav>
+<div class="rail-bottom"><button id="ai-settings" disabled>AI 接入与用量</button><button id="settings-button">行情与提醒设置</button></div>
+</aside>
+<div class="workspace">
+<header class="topbar"><div><div class="eyebrow" id="view-area">美股趋势工作台</div><h1 id="view-title">行情看板</h1></div><div class="header-actions"><span id="clock" class="clock"></span><button id="mode-toggle" class="button subtle">查看演示</button><button id="connection-button" class="connection"><span class="dot"></span><span id="connection-label">正在连接</span></button></div></header>
+<div id="status-banner" class="status-banner"><span id="status-text">正在读取本地服务…</span><button id="reconnect" class="text-button">重新连接 ↻</button></div>
+<main>
+<div id="view-tools" hidden>
+<label id="ticker-control" hidden>当前股票 <select id="view-symbol"></select></label>
+<nav id="stock-links" aria-label="个股研究栏目" hidden><a href="#studies">多周期技术</a><a href="#intraday">日内分时</a><a href="#research">短线条件与 AI</a><a href="#fundamental">基本面</a><a href="#longterm">长线时机</a></nav>
+<nav id="news-links" aria-label="宏观新闻栏目" hidden><a href="#macro-section">宏观数据与要闻</a><a href="#macro-bubble">AI 泡沫指数</a><a href="#financialjuice">FinancialJuice 快讯</a></nav>
+<nav id="journal-links" aria-label="记录与复盘" hidden><a href="#events-section">交易提醒</a><a href="#study-journal">研究信号复盘</a><a href="#backtest-section">策略回测</a></nav>
+</div>
+<section class="overview" id="market" data-view="market"><div class="overview-title"><h2>美股市场概览</h2><span id="market-label" class="muted">读取交易日历…</span></div><button class="market-card" id="benchmark-spy" data-symbol="SPY"></button><button class="market-card" id="benchmark-qqq" data-symbol="QQQ"></button><div class="session-card"><span class="eyebrow">MONITOR STATUS</span><div id="monitor-count">—<small> / 50 自选股</small></div><div id="monitor-status" class="muted">等待连接行情服务</div></div></section>
+<section class="workbench" data-view="market">
+<aside class="watch-panel panel"><div class="panel-head"><h2>自选股 <span id="watch-count" class="count">0</span></h2><button id="add-button" class="icon-button" aria-label="添加自选股">＋</button></div><div class="watch-controls"><input id="search" type="search" placeholder="搜索股票代码" aria-label="搜索自选股"><select id="sort" aria-label="自选股排序"><option value="default">我的排序</option><option value="distance">接近触发</option><option value="strength">相对强弱</option></select></div><div class="list-label"><span>股票 / 趋势</span><span>价格 / 涨跌</span></div><div id="watchlist" class="watchlist"></div><div class="watch-foot"><span class="dot"></span>常规时段 · USD <button id="remove-watch" class="text-button" hidden>移除当前自选</button></div></aside>
+<section class="chart-panel panel"><div class="stock-heading"><div><div class="stock-symbol" id="stock-symbol">NVDA <span>NASDAQ</span></div><div id="stock-name" class="muted">等待行情</div></div><div class="stock-value"><div id="stock-price">—</div><span id="stock-change" class="muted">暂无报价</span></div></div><div class="chart-toolbar"><div class="segments" id="timeframes"><button data-tf="1M">月线</button><button data-tf="1W">周线</button><button data-tf="1D" class="active">日线</button><button data-tf="4h">4 小时</button><button data-tf="60m">1 小时</button><button data-tf="30m">30 分钟</button><button data-tf="15m">15 分钟</button><button data-tf="5m">5 分钟</button></div><div class="legend"><span class="ma20">━ MA20</span><span class="ma50">━ MA50</span><label class="chart-line-toggle" title="显示或隐藏通道、支撑阻力和平台线"><input type="checkbox" id="market-lines" checked>显示划线</label><button id="chart-reset" class="text-button">重置</button></div></div><div id="chart-info" class="chart-info">开 —　高 —　低 —　收 —</div><div id="chart" class="chart" role="img" aria-label="股票蜡烛图，滚轮缩放，拖动查看历史"></div><div class="chart-footer"><span id="chart-source">等待 moomoo 数据</span><span>滚轮缩放 · 拖动平移 · 美东时间</span></div><div class="trend-strip" id="trend-strip"></div><div class="stock-actions"><a href="#intraday">日内分时 ↗</a><a href="#studies">技术研究 ↗</a></div></section>
+<aside class="insight-panel panel"><div class="panel-head"><h2>交易观察</h2><span class="pill">做多</span></div><div class="insight-content"><span class="eyebrow">TREND & SETUP</span><h3 id="setup-title">等待行情接入</h3><p id="setup-reason" class="muted">连接 OpenD 后，自动分析多周期趋势。</p><div id="data-warning" class="data-warning"></div><div class="levels" id="levels"></div><div class="rule-heading"><h4>入场条件</h4><button id="rules-button" class="text-button">规则说明 ↗</button></div><div id="conditions" class="conditions"></div><div class="position-box"><div class="rule-heading"><h4>我的持仓计划</h4><button id="position-button" class="text-button">编辑 ＋</button></div><div id="position-info" class="muted">录入持仓，启用保护价和目标价提醒。</div></div></div></aside>
+</section>
+<section class="panel macro-panel" id="studies" data-view="studies" hidden>
+<div class="panel-head"><h2 id="study-heading">个股研究</h2><div class="ai-controls"><label>AI 模式 <select id="study-profile"><option value="routine">快速解读</option><option value="deep">深入分析</option></select></label><a id="study-journal-link" href="#study-journal" class="text-button" hidden>查看该股同周期信号复盘 ↗</a><button id="study-refresh" class="text-button">刷新研究 ↻</button></div></div>
+<div class="macro-body"><div class="study-navigation">
+<label id="study-tf-label">K 线周期 <select id="study-tf" aria-label="技术结构周期"><option value="1M">月线</option><option value="1W">周线</option><option value="1D" selected>日线</option><option value="4h">4 小时</option><option value="60m">1 小时</option><option value="30m">30 分钟</option><option value="15m">15 分钟</option><option value="5m">5 分钟</option></select></label></div>
+<p id="study-status" role="status" class="muted small"></p>
+<div class="chart-layers" id="study-layers" hidden>
+<label title="显示或隐藏技术结构线"><input id="technical-lines" type="checkbox" checked>显示划线</label>
+<label title="按最近 30 至 60 根连续分钟线拟合"><input id="minute-channel" type="checkbox" checked>趋势通道</label>
+<label title="阴影为平台范围，竖虚线为首次确认位置"><input id="minute-boxes" type="checkbox" checked>平台区间</label>
+<label title="悬停或点按标记查看当时的触发依据"><input id="minute-marks" type="checkbox" checked>事件标记</label>
+</div>
+<div id="study-chart"></div><div id="minute-events"></div>
+<div id="study-section-action"></div><div id="study-cards"></div><div id="study-answer" aria-live="polite"></div></div></section>
+<section class="panel macro-panel" id="macro-section" data-view="macro-section" hidden><div class="panel-head"><h2 id="macro-heading">美股宏观环境</h2><button id="macro-refresh" class="text-button">刷新数据 ↻</button></div>
+<div class="macro-body"><div id="macro-status" class="muted small" role="status">正在读取公开数据…</div>
+<div data-macro-pane="all"><h3 id="macro-sentiment">市场风险情绪</h3><p class="muted small">VIX 衡量标普 500 未来约 30 天的隐含波动率，高收益债利差反映信用风险溢价。分别与此前 252 个有效日值比较，第 80 百分位及以上标为偏高，第 20 百分位及以下标为偏低。</p>
+<div id="macro-cards"></div>
+<a class="text-button" href="#macro-bubble" id="bubble-shortcut">查看 AI 泡沫指数 ↗</a></div>
+<section data-macro-pane="bubble" hidden id="macro-bubble" aria-labelledby="bubble-title"><div class="rule-heading"><h3 id="bubble-title">AI 泡沫指数</h3><a class="text-button" href="https://aibubblemonitor.com/methodology" target="_blank" rel="noreferrer">编制方法 ↗</a></div><div id="bubble-reading" aria-live="polite">正在读取指数…</div></section>
+<div class="rule-heading"><h4 id="macro-ai-heading">宏观 AI 解读</h4><div class="ai-controls"><label>分析模式 <select id="macro-profile"><option value="routine">快速解读</option><option value="deep">深入分析</option></select></label><button type="button" id="macro-analyze" class="button primary">分析宏观环境</button><button type="button" id="bubble-analyze" class="button">单独解读泡沫指数</button></div></div>
+<p id="macro-ai-status" class="muted small" role="status">使用「AI 接入」中对应的模型和推理强度，点击后分析当前指标和新闻标题。</p>
+<div id="macro-ai-output" aria-live="polite" style="white-space:pre-wrap"></div>
+<div data-macro-pane="all"><div class="rule-heading"><h4>政策公告与市场新闻</h4><a class="text-button" href="#financialjuice">FinancialJuice 快讯 ↗</a></div><div id="macro-news"></div></div></div></section>
+<section class="panel macro-panel" id="financialjuice" data-view="financialjuice" hidden>
+<div class="panel-head"><h2>FinancialJuice 快讯</h2><a class="text-button" href="https://www.financialjuice.com/" target="_blank" rel="noreferrer">打开官网 ↗</a></div>
+<div class="fj-layout">
+<div><iframe id="fj-frame" title="FinancialJuice 官方新闻组件" loading="lazy" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" referrerpolicy="origin" data-src="https://feed.financialjuice.com/widgets/headlines.aspx?wtype=NEWS&amp;mode=Dark&amp;container=financialjuice-news-widget-container&amp;width=100%25&amp;height=440px&amp;backC=1e222d&amp;fontC=b2b5be"></iframe>
+<p class="muted small">组件空白或提示访问受限时，可点「打开官网」阅读，再在解读框输入问题。</p></div>
+<form id="fj-form"><h3>单条新闻解读</h3><label for="fj-text">所选文字或你的问题</label>
+<textarea id="fj-text" rows="5" maxlength="1200" required placeholder="选中快讯后点浮动按钮，或在这里粘贴、输入问题"></textarea>
+<div class="ai-controls"><select id="fj-profile" aria-label="新闻分析模式"><option value="routine">快速解读</option><option value="deep">深入分析</option></select><button class="button primary" type="submit" id="fj-submit" disabled>发送给 AI 解读</button></div>
+<p class="muted small" id="fj-status" role="status"></p><div id="fj-result" aria-live="polite"></div>
+<details><summary>启用选中文字的浮动按钮</summary><p class="muted small">在 Chrome 或 Edge 扩展管理页打开开发者模式，选择「加载已解压的扩展程序」，选择项目内的 financialjuice-extension 文件夹，然后刷新工作台。</p></details></form>
+</div></section>
+<section class="research panel" id="research" data-view="research" hidden>
+<div class="panel-head"><h2 id="research-symbol">技术指标</h2><span class="muted" id="research-time"></span><a class="text-button" href="#backtest-section">查看策略回测 ↗</a></div>
+<div class="research-grid"><div class="research-facts"><div id="research-context"></div><div class="segments" id="research-tabs"><button type="button" class="active" data-rule="顺势突破">顺势突破</button><button type="button" data-rule="回调转强">回调转强</button><button type="button" data-rule="接近突破位">接近突破位</button></div><label class="muted small">单项条件 AI <select id="condition-profile"><option value="routine">快速解读</option><option value="deep">深入分析</option></select></label><div id="research-checks"></div><div id="condition-answer" aria-live="polite" style="white-space:pre-wrap"></div></div>
+<div class="research-ai"><div class="rule-heading"><h2>AI 行情解读</h2><button id="research-ai-settings" class="text-button" disabled>模型与用量 ↗</button></div>
+<p id="ai-status" class="muted">正在读取接入状态…</p><div class="ai-controls"><button id="ai-request" class="button primary" disabled>盘中快速解读</button><button type="button" id="ai-deep" class="button" disabled>深入分析当前股票</button><label class="check-label"><input id="ai-auto" type="checkbox" disabled>盘中新 15 分钟 K 线自动解读</label></div>
+<p id="ai-meta" class="muted small"></p><div id="ai-output" aria-live="polite"></div><details class="ai-receipt" id="ai-receipt" hidden><summary>调用凭据</summary><pre></pre></details><div id="ai-deep-meta" class="muted small"></div><div id="ai-deep-output" aria-live="polite"></div><details class="ai-receipt" id="ai-deep-receipt" hidden><summary>调用凭据</summary><pre></pre></details></div></div></section>
+<dialog id="ai-dialog"><form id="ai-form"><div class="dialog-head"><h2>AI 接入与用量</h2><button type="button" class="close-dialog icon-button" aria-label="关闭">×</button></div>
+<fieldset class="ai-profile"><legend>盘中快速解读与自动提醒</legend><label>模型<select id="ai-model-select"></select></label><label hidden>自定义模型 ID<input id="ai-model" maxlength="100"></label><label>推理强度<select id="ai-model-effort"></select></label></fieldset>
+<fieldset class="ai-profile"><legend>单股深入分析</legend><label>模型<select id="ai-deep-model-select"></select></label><label hidden>自定义模型 ID<input id="ai-deep-model" maxlength="100"></label><label>推理强度<select id="ai-deep-model-effort"></select></label></fieldset>
+<label>OpenAI API Key<input id="ai-key" type="password" autocomplete="off" placeholder="输入密钥，已配置时留空可沿用"></label>
+<details id="ai-catalog"><summary>当前 Key 的全部模型</summary><button type="button" class="text-button" id="ai-list-models">从 OpenAI 刷新清单</button><p id="ai-catalog-info" class="muted small">保存密钥后可读取账户清单。列表包含不同用途的模型，行情解读需支持 Responses 文本输出。</p><pre id="ai-model-list"></pre></details>
+<details class="ai-usage" id="ai-usage"><summary>Token 用量与 API 限额</summary><div id="ai-totals"></div><div id="ai-limits"></div><p><a href="https://platform.openai.com/usage" target="_blank" rel="noreferrer">OpenAI 账户用量与费用 ↗</a>　<a href="https://platform.openai.com/settings/organization/billing/overview" target="_blank" rel="noreferrer">账单与余额 ↗</a></p></details><p class="muted small"><span id="ai-key-state"></span> 页面输入的密钥由 Windows 当前用户加密保存，下次启动时自动读取。请求会向 OpenAI 发送当前股票的代码、行情和指标，按所选模型计费。</p><div class="dialog-actions"><button type="button" class="button subtle" id="ai-clear">清除本机密钥</button><button class="button primary">保存接入</button></div></form></dialog>
+<section class="events-panel panel" id="events-section" data-view="events-section" hidden><div class="panel-head"><div class="events-title"><h2>交易提醒</h2><span id="event-count" class="count">0</span><span class="muted small">筛选最近 100 条</span></div><div class="events-actions"><select id="event-filter" aria-label="筛选信号"><option value="all">所有信号</option><option value="selected">当前股票</option><option value="risk">持仓风险</option></select><button id="ack-events" class="text-button">全部已读</button><a class="text-button" id="export" href="/api/events/export" title="导出全部股票最近 10,000 条提醒">导出最近记录 CSV ↗</a></div></div><div id="events"></div></section>
+<section class="panel" id="study-journal" data-view="study-journal" hidden>
+<div class="panel-head"><h2>研究信号复盘</h2><button id="journal-refresh" class="text-button">刷新记录 ↻</button></div>
+<div class="macro-body"><div class="study-navigation">
+<label>股票范围 <select id="journal-scope"><option value="">全部记录</option><option value="current">当前股票</option></select></label>
+<label>K 线周期 <select id="journal-tf"><option value="">全部周期</option><option value="1M">月线</option><option value="1W">周线</option><option value="1D">日线</option><option value="4h">4 小时</option><option value="60m">1 小时</option><option value="30m">30 分钟</option><option value="15m">15 分钟</option><option value="5m">5 分钟</option><option value="1m">1 分钟</option></select></label>
+<label>指标 <select id="journal-kind"><option value="">全部指标</option><option value="timing">长线时机</option></select></label>
+<label>观察窗口 <select id="journal-horizon"><option value="1">后 1 根</option><option value="5" selected>后 5 根</option><option value="20">后 20 根</option></select></label></div>
+<p id="journal-status" class="muted small" role="status"></p>
+<p class="muted small">以信号确认时的收盘价为基准。涨跌按窗口结束时的收盘价计算，最大下探按期间最低价计算，跌幅以正数显示。仅统计行情连续且走满窗口的记录，1 分钟信号限当日。</p>
+<details><summary>记录从何时开始？</summary><p class="muted small">每只自选股首次回放各周期最近 60 根 K 线，分钟线最多回放 390 根。此后按可取得的已收盘行情增量记录。同一信号持续期间只记首次确认。展开单条依据可对照确认时间和实际写入时间。</p></details>
+<div id="platform-comparison"></div><div class="bt-table-wrap" id="journal-groups"></div>
+<h3>最近 100 条确认记录</h3><div class="bt-table-wrap" id="journal-samples"></div></div></section>
+<section class="panel backtest-panel" id="backtest-section" data-view="backtest-section" hidden>
+<div class="panel-head"><div><span class="eyebrow">顺势突破 · 回调转强 · 开盘区间突破（仅回测）</span><h2>历史回测 <span class="count">真实 moomoo 数据</span></h2></div><div class="bt-history-controls"><label>查看历史记录 <select id="bt-history" aria-label="已保存的回测"><option value="">暂无回测</option></select></label><button id="bt-copy" class="text-button" disabled title="复制股票、日期和回测表单数值；信号阈值使用当前行情设置">复制到回测表单</button></div></div>
+<form id="bt-form" class="bt-form">
+<label class="bt-symbols">美股代码（逗号分隔，最多 20 只）<input id="bt-symbols" required placeholder="NVDA, AAPL, MSFT"></label>
+<label>开始日期（美东）<input id="bt-start" type="date" required></label><label>结束日期（美东）<input id="bt-end" type="date" required></label>
+<label>每策略本金 USD<input id="bt-capital" type="number" min="100" max="100000000" required></label>
+<label>每边费用 bps<input id="bt-fee_bps" type="number" min="0" max="100" step=".1" required></label>
+<label>每边滑点 bps<input id="bt-slippage_bps" type="number" min="0" max="100" step=".1" required></label>
+<label>每股资金风险 %<input id="bt-risk_percent" type="number" min=".01" max="5" step=".01" required></label>
+<label>止盈风险倍数 R<input id="bt-target_r" type="number" min=".5" max="10" step=".1" required></label>
+<label>最多持有 15m 根数<input id="bt-max_bars" type="number" min="1" max="2600" required></label>
+<div class="bt-actions"><button class="button primary" id="bt-run" type="submit">运行历史回测 ↗</button><button class="button subtle" id="bt-cancel" type="button" hidden>取消</button></div>
+</form>
+<div class="bt-status" role="status" aria-live="polite"><span id="bt-status">正在读取回测记录…</span><progress id="bt-progress" value="0" max="100" hidden></progress></div>
+<div id="bt-results"></div>
+<details class="bt-method"><summary>成交假设与统计口径</summary><p>每种策略分别运行独立账户。本金按输入股票数等分，每只股票最多一笔做多持仓、不借贷，风险比例以该股可用资金计算。未满足条件的资金保持现金；缺数据的股票也保留原资金份额。收益为整个账户扣费后的收益，胜率按已平仓交易净盈亏计算。</p><p>顺势突破和回调转强沿用实时规则。开盘区间突破仅用于回测：首根 15 分钟收阳且成交量达到此前 14 个交易日同一时段均量的设定倍数；随后首次收盘高于首根高点，下一根开盘入场，保护价取首根低点。每股每日最多一次信号，最后一根不产生入场信号，可隔夜持仓。三种策略均使用已收盘数据；下一根可用 15 分钟 K 线开盘价加滑点成交（可能隔夜）。这是理想化开盘撮合，不含实际推送与确认延迟。保护价固定为信号参考价，目标按实际模拟入场价计算。跳空跌破保护价按开盘卖出；同一根内保护价与目标价均触及，优先保护价；超过持有上限或样本结束强制退出。所有买卖都扣费用与不利滑点。1 bps = 0.01%。</p><p>最大回撤按每根 15 分钟收盘的账户净值计算，含浮盈浮亏及预计平仓手续费，不是盘中逐笔最大回撤。使用前复权价格、模拟碎股；不另计分红现金、利息、税费、真实最小佣金和市场冲击。以当前自选股回看存在选股偏差，历史表现不代表未来。显示的退出时间是所在 K 线结束时刻，并非精确成交时刻。</p></details>
+</section>
+<footer class="page-footer"><span>TRENDDESK <span class="muted">/ 本地运行 · moomoo 行情 · 手动执行</span></span><span id="quota-label">等待额度信息</span></footer>
+</main></div>
+<dialog id="add-dialog"><form id="add-form"><div class="dialog-head"><h2>添加美股</h2><button type="button" class="close-dialog icon-button" aria-label="关闭">×</button></div><p class="muted">输入美股或美股 ETF 代码。连接后会验证数据是否可用。</p><label>股票代码<input id="new-symbol" placeholder="例如 AAPL、NVDA" maxlength="15" required autocomplete="off"></label><button class="button primary" type="submit">加入自选</button></form></dialog>
+<dialog id="settings-dialog"><form id="settings-form"><div class="dialog-head"><h2>行情与提醒设置</h2><button type="button" class="close-dialog icon-button" aria-label="关闭">×</button></div><label>OpenD 本机端口<input id="setting-port" type="number" min="1024" max="65535" required></label><label>放量确认倍数<input id="setting-volume" type="number" min="1" max="5" step="0.1" required></label><label>接近突破位阈值（%）<input id="setting-near" type="number" min="0.1" max="3" step="0.1" required></label><label class="check-label"><input id="setting-notifications" type="checkbox">启用 Windows 桌面提醒</label><p class="muted small">后台和 OpenD 运行时，即使关闭网页也继续监控。Windows 通知显示受系统通知设置影响。</p><button class="button primary" type="submit">保存设置</button></form></dialog>
+<dialog id="position-dialog"><form id="position-form"><div class="dialog-head"><h2 id="position-title">持仓计划</h2><button type="button" class="close-dialog icon-button" aria-label="关闭">×</button></div><p class="muted">手动记录做多持仓。保存保护价或目标价后启用相应提醒。</p><div class="form-grid"><label>持有数量<input id="position-quantity" type="number" min="0.000001" step="any" required></label><label>成本（USD）<input id="position-cost" type="number" min="0.000001" step="any" required></label><label>保护价（可选）<input id="position-stop" type="number" min="0.000001" step="any"></label><label>目标价（可选）<input id="position-target" type="number" min="0.000001" step="any"></label></div><div class="dialog-actions"><button class="button danger" type="button" id="delete-position">移除持仓</button><button class="button primary" type="submit">保存计划</button></div></form></dialog>
+<dialog id="rules-dialog"><div class="dialog-head"><h2>信号规则 · v1.0</h2><button type="button" class="close-dialog icon-button" aria-label="关闭">×</button></div><div class="rules-copy"><h3>顺势突破</h3><p>日线价格 > MA20 > MA50，MA50 上行；小时线不处于下降趋势。15 分钟收盘突破触发前 20 根小时 K 线的最高价，成交量达到前 20 根 15 分钟 K 线均量的设定倍数，偏离突破位不超过 0.75 ATR。</p><h3>回调转强</h3><p>满足相同的趋势与成交量条件；前 6 根 15 分钟 K 线触及小时 MA20 ± 0.25 小时 ATR 区域，未跌破小时区间下沿，最新收盘突破前 3 根 15 分钟 K 线高点且回到小时 MA20 上方。</p><h3>提醒与数据</h3><p>正式入场提醒只使用常规时段的已收盘 K 线；收市后保留 2 分钟确认最后一根 K 线。报价超过 120 秒、历史未同步或断线时暂停新信号。重连不补发过时入场提醒。保护价与目标价基于新鲜报价触发，修改计划后重新启用。</p><p>图表为前复权行情；2R 是根据参考保护位计算的风险倍数目标，不是预测价格。成交量倍数未做日内季节性校正。可在历史回测页对这两类入场信号进行同区间比较。</p></div></dialog>
+<dialog id="event-dialog"><div class="dialog-head"><h2>信号详情</h2><button type="button" class="close-dialog icon-button" aria-label="关闭">×</button></div><div id="event-detail" class="rules-copy"></div><a id="event-study" class="text-button" href="#research" hidden>查看该股当前条件</a></dialog>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="/static/app.js" defer></script>
+<script src="/static/studies.js" defer></script>
+<script src="/static/macro.js" defer></script>
+<script src="/static/news.js" defer></script>
+<script src="/static/research.js" defer></script>
+<script src="/static/backtest.js" defer></script>
+<script src="/static/journal.js" defer></script>
+<script src="/static/navigation.js" defer></script>
+</body></html>

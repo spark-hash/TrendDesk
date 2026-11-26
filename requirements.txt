@@ -1,0 +1,7 @@
+fastapi==0.165.0
+uvicorn==0.54.0
+moomoo-api==10.12.7208
+exchange-calendars==4.13.3
+tzdata==2026.6
+pytest==9.2.0
+httpx==0.28.1

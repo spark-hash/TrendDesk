@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "TrendDesk · 快讯选文解读",
+  "version": "1.0.0",
+  "description": "在本地工作台的 FinancialJuice 新闻组件中，将手动选择的文字带入解读框。",
+  "content_scripts": [{
+    "matches": ["https://feed.financialjuice.com/widgets/headlines.aspx*"],
+    "all_frames": true,
+    "js": ["selection.js"],
+    "run_at": "document_idle"
+  }]
+}

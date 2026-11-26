@@ -1,0 +1,15 @@
+TrendDesk 美股工作台 · Windows x64
+
+将整个 ZIP 解压到本机文件夹，双击 TrendDesk.exe。请将 runtime、program 保留在 EXE 同一目录。
+首次运行会启动后台，准备好后自动打开 http://127.0.0.1:8765/ 。再次运行会打开已有工作台。
+关闭网页后后台继续监控。双击托盘图标可再次打开网页，右键选择「退出并停止服务」可关闭 EXE 启动的后台。
+如果先前通过 start.cmd 启动，EXE 会复用该服务，仍可用原来的 stop.cmd 停止它。
+
+实时行情需要先安装并登录 Moomoo OpenD，默认端口 11111。未连接时可以打开工作台、查看本机缓存或进入演示模式。
+发布包内置 Python 与运行依赖。OpenAI Key 可在「AI 接入与用量」中设置，通过当前 Windows 用户的 DPAPI 加密保存。
+新用户的数据默认位于 %LOCALAPPDATA%\TrendDesk\data。桌面服务日志为该目录中的 desktop-server.log。
+已有工作台可以在服务停止后，将原有 data 文件夹的绝对路径单独写入 %LOCALAPPDATA%\TrendDesk\data-location.txt（UTF-8），使桌面版使用原有设置、自选、回测和当前用户加密保存的密钥。
+桌面版启动后及每隔 6 小时自动检查 spark-hash/TrendDesk 的 GitHub 稳定版，静默下载并校验 SHA-256。托盘退出后，再次双击原入口就会运行已下载的新版。下载或校验失败会延后重试。
+已下载的版本位于 %LOCALAPPDATA%\TrendDesk\versions。请保留自己的数据目录。换电脑或 Windows 用户后，在页面内重新保存 API Key。
+
+可选 FinancialJuice 选中文字功能使用压缩包中的 financialjuice-extension 文件夹。
