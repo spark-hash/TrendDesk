@@ -33,7 +33,7 @@ def copy_runtime(target):
             continue
         if src.is_dir():
             shutil.copytree(src, lib/src.name, ignore=SKIP)
-        elif src.suffix in ('.py','.txt'):
+        elif src.suffix in ('.py','.txt') or src.name == 'codex-rejected-cas.pem':
             shutil.copy2(src, lib/src.name)
 
     # Package only files listed in runtime wheel manifests, including data and licenses.
@@ -67,6 +67,8 @@ def build():
         stage = Path(tmp)/'TrendDesk'
         stage.mkdir()
         copy_runtime(stage/'runtime')
+        subprocess.run([str(stage/'runtime/python.exe'), '-I', '-B', '-c',
+                        'import ssl; ssl.create_default_context()'], check=True)
         program = stage/'program'
         shutil.copytree(ROOT/'app', program/'app', ignore=SKIP)
         shutil.copytree(ROOT/'web', program/'web')
