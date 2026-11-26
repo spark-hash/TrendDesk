@@ -7,7 +7,7 @@ import pytest
 from scripts import desktop_update as updater
 
 
-def release(tmp_path, *, tag='v2.0.0', digest=None, extra=None, prerelease=False):
+def release(tmp_path, *, tag='v2.0.0', digest=None, extra=None, prerelease=False, approve=True):
     archive = io.BytesIO()
     with zipfile.ZipFile(archive, 'w') as bundle:
         for name in updater.REQUIRED:
@@ -26,11 +26,13 @@ def release(tmp_path, *, tag='v2.0.0', digest=None, extra=None, prerelease=False
         calls.append(address)
         return io.BytesIO({updater.LATEST: json.dumps(metadata).encode(), url: payload}[address])
 
-    updater.check_release(tmp_path, fetch)
+    updater.check_release(tmp_path, lambda tag,size: approve, fetch)
     return calls
 
 
 def test_stage_new_version_once(tmp_path):
+    assert release(tmp_path, approve=False) == [updater.LATEST]
+    assert not list(tmp_path.iterdir())
     assert len(release(tmp_path)) == 2
     assert (tmp_path / '2.0.0/TrendDesk.exe').is_file()
     assert release(tmp_path) == [updater.LATEST]

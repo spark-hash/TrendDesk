@@ -78,33 +78,33 @@ def analyze_closed(bars, benchmark=None, now=None, settings=None):
                   distance=(resistance / current['close'] - 1) * 100, bar_time=current['time'],
                   volume_ratio=vol_ratio, close=current['close'], target_2r=current['close']+risk*2,
                   message='等待入场条件确认')
-    def check(group, label, met, evidence):
-        return {'group':group, 'label':label, 'met':met, 'evidence':evidence}
+    def check(group, label, points, met, evidence):
+        return {'group':group, 'label':label, 'met':met, 'evidence':evidence, 'max_points':points}
 
     day = trends['1D']
     near_limit = settings.get('near_percent', .5)
     extension = current['close'] - resistance
     result['bar_close_time'] = bar_end(current, '15m').isoformat()
     result['conditions'] = [
-        check('共同条件', '日线多头排列且 MA50 上行', daily_up,
+        check('共同条件', '日线多头排列且 MA50 上行', 25, daily_up,
               f"收盘 {daily[-1]['close']:.2f}，MA20 {day['ma20']:.2f}，MA50 {day['ma50']:.2f}（5 根前 {sma([b['close'] for b in daily[:-5]],50):.2f}）。要求收盘 > MA20 > MA50。"),
-        check('共同条件', '信号开始前的小时趋势未转空', hourly_ok,
+        check('共同条件', '信号开始前的小时趋势未转空', 15, hourly_ok,
               f"最近已完成小时线为{hour_trend['label']}，收盘 {context[-1]['close']:.2f}。"),
-        check('入场量能', '15 分钟放量确认', volume_ok,
+        check('入场量能', '15 分钟放量确认', 20, volume_ok,
               f"本根 {current['volume']:,.0f} 股，前 20 根均量 {vol_base:,.0f} 股，量比 {vol_ratio:.2f}，要求 ≥ {volume_min:g}。"),
-        check('顺势突破', '收盘从区间下方向上突破', breakout,
+        check('顺势突破', '收盘从区间下方向上突破', 20, breakout,
               f"前收 {previous['close']:.2f}，小时区间上沿 {resistance:.2f}，本根收盘 {current['close']:.2f}。要求前收 ≤ 上沿 < 本收。"),
-        check('顺势突破', '收盘位于突破位上方且偏离 ≤ 0.75 ATR', 0 < extension <= volatility*.75,
+        check('顺势突破', '收盘位于突破位上方且偏离 ≤ 0.75 ATR', 20, 0 < extension <= volatility*.75,
               f"收盘减上沿 {extension:+.2f}，15 分钟 ATR {volatility:.2f}，允许向上偏离 {volatility*.75:.2f}。"),
-        check('回调转强', '前 6 根触及小时 MA20 区域', zone_hit,
+        check('回调转强', '前 6 根触及小时 MA20 区域', 10, zone_hit,
               f"均线区域 {hourly_ma-hourly_atr*.25:.2f}–{hourly_ma+hourly_atr*.25:.2f}，按小时 MA20 ± 0.25 ATR 计算。"),
-        check('回调转强', '回踩低点守住小时区间', structure_ok,
+        check('回调转强', '回踩低点守住小时区间', 10, structure_ok,
               f"最近 7 根最低 {min(b['low'] for b in entry[-7:]):.2f}，须 ≥ 区间下沿 {support:.2f}。"),
-        check('回调转强', '收盘高于前 3 根高点和小时 MA20', current['close']>max(local_high,hourly_ma),
+        check('回调转强', '收盘高于前 3 根高点和小时 MA20', 15, current['close']>max(local_high,hourly_ma),
               f"收盘 {current['close']:.2f}，前 3 根最高 {local_high:.2f}，小时 MA20 {hourly_ma:.2f}。"),
-        check('回调转强', '参考保护位低于收盘', risk>0,
+        check('回调转强', '参考保护位低于收盘', 5, risk>0,
               f"参考保护位 {stop:.2f}，每股风险距离 {risk:.2f}。"),
-        check('接近突破位', '收盘接近小时区间上沿', 0<=result['distance']<=near_limit,
+        check('接近突破位', '收盘接近小时区间上沿', 0, 0<=result['distance']<=near_limit,
               f"距上沿 {result['distance']:+.2f}%，提醒范围 0 至 {near_limit:g}%。此观察提醒仅另需满足两项共同条件。"),
     ]
     if not result['fresh']:

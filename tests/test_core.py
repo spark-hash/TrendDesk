@@ -83,6 +83,24 @@ def test_breakout_signal_uses_prior_levels_and_current_history():
     assert all(c['met'] and c['evidence'] for c in result['conditions']
                if c['group'] in ('顺势突破','共同条件','入场量能'))
     assert datetime.fromisoformat(result['bar_close_time']) == et('2026-11-25T10:45:00')
+    from app.entry_score import entry_score
+    item = dict(analysis=result, synced=True, quote_fresh=True)
+    live = dict(mode='live', market={'open':True}, connected=True, now='2026-11-25T10:45:04-05:00')
+    score = entry_score(item, live)
+    assert score['total'] == 100 and '可评估开仓' in score['verdict']
+    from app.point_score import candle_score
+    point=et('2026-11-25T10:45:00')
+    historical=candle_score(series,point,{})
+    assert historical['total']==100
+    extra={tf:[*rows,bar('2026-11-25T12:30:00-05:00',80,volume=99999)] for tf,rows in series.items()}
+    assert candle_score(extra,point,{})==historical
+    for setup in score['setups']:
+        assert sum(r['limit'] for r in setup['rows']) == 100
+        assert sum(r['points'] for r in setup['rows']) == setup['total']
+        assert all(r['evidence'] for r in setup['rows'])
+    assert '暂缓' in entry_score(dict(item, quote_fresh=False), live)['verdict']
+    assert '收盘复盘' in entry_score(item, dict(live, market={'open':False}))['verdict']
+    assert '等待' in entry_score(item, dict(live, now='2026-11-25T10:50:00-05:00'))['verdict']
     # Unfinished next bar must not affect the trigger, even with an extreme high.
     series['15m'].append(bar('2026-11-25T10:45:00-05:00',200))
     assert analyze(series,now=et('2026-11-25T10:45:04'))==result

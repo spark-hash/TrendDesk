@@ -13,6 +13,23 @@ from app.store import Store
 from app.technicals import geometry, patterns
 
 
+def test_cross_level_priorities_and_confluence(monkeypatch):
+    from app import cross_levels as cross
+    now=datetime(2026,11,25,16,0,3,tzinfo=ET)
+    monkeypatch.setattr(cross,'expected_last_close',lambda tf,now:now.replace(hour=9,minute=0))
+    frames={tf:[dict(time='2026-11-25T15:00:00-05:00',close=100,high=104,low=92)] for tf in ('1M','60m','5m')}
+    def level(price,touches):
+        return ['支撑 1','',price,'',price,dict(touches=touches,strength='弱' if touches==1 else '强')]
+    studies={}
+    for tf,price,count in [('1M',90,1),('60m',98,5),('5m',90.05,2)]:
+        studies[tf]=({},[level(price,count)])
+    zones=cross.ranked_zones(frames,studies,now)
+    monthly=next(z for z in zones if z['price']==90)
+    hourly=next(z for z in zones if z['price']==98)
+    assert monthly['priority']<hourly['priority'] and hourly['near']
+    assert monthly['periods']==['月线','5 分钟'] and monthly['high']==90.05
+
+
 def series(n,step=.1):
     start=datetime(2026,11,25,9,30,tzinfo=ET)
     return [dict(time=(start+timedelta(minutes=i)).isoformat(),open=100+i*step,close=100+i*step,
@@ -31,11 +48,19 @@ def test_channel_platform_patterns():
     b=series(24,0)
     b[-2].update(open=105,close=99,high=106,low=98)
     b[-1].update(open=100,close=102,high=103,low=99)
-    assert patterns(b,2,[],[])['harami']['status']=='阳线'
+    harami=patterns(b,2,[],[])['harami']
+    assert harami['status']=='阳线'
+    assert harami['overlay']['candles']==[[b[-2]['time'],98,106],[b[-1]['time'],99,103]]
     for idx,h in [(3,105),(9,108),(15,105)]: b[idx]['high']=h
     b[-2]['close']=100
     b[-1]['close']=98
-    assert patterns(b,1,[3,9,15],[])['top3']['status']=='收盘越过颈线'
+    shape=patterns(b,1,[3,9,15],[])['top3']
+    assert shape['status']=='收盘越过颈线'
+    assert shape['overlay']['points'][::2]==[[b[i]['time'],b[i]['high']] for i in (3,9,15)]
+    assert shape['overlay']['neck'][-1]==[b[-1]['time'],99]
+    b[-1]['close']=100
+    assert patterns(b,1,[3,9,15],[])['top3']['overlay']['pending']
+    assert 'overlay' not in patterns(b,1,[],[])['bottom3']
 
 
 def test_intraday_warmup_vwap_and_divergence():
@@ -53,6 +78,32 @@ def test_intraday_warmup_vwap_and_divergence():
     b[15].update(high=107,rsi=70)
     assert divergence(b,'rsi')['status']=='顶背离'
     assert divergence(b[:17],'rsi')['status']!='顶背离'
+
+
+def test_point_score_uses_only_known_minutes_and_marks_missing_volume():
+    from app.point_score import minute_score
+    bars=series(70)
+    _,rows=intraday(bars)
+    before=minute_score(rows,40)
+    assert datetime.fromisoformat(before['as_of']) == datetime(2026,11,25,10,11,tzinfo=ET)
+    assert before['total'] is not None
+    assert sum(r['points'] for r in before['setups'][0]['rows'])==before['total']
+    for b in bars[41:]:
+        b.update(close=500,high=501,volume=9999999)
+    assert minute_score(intraday(bars)[1],40)==before
+    assert minute_score(rows,0)['total'] is None
+    assert minute_score(rows[1:],39)['total'] is None
+
+
+def test_key_level_lines_carry_the_card_strength():
+    bars=series(60,0)
+    for i in (8,20,32): bars[i]['low']=97
+    bars[12]['high']=105
+    cards,lines=geometry(bars)
+    for prefix,key,count,expected in [('支撑','support1',3,'强'),('阻力','resistance1',1,'弱')]:
+        line=next(line for line in lines if line[0]==prefix+' 1')
+        assert line[5]==dict(strength=expected,touches=count)
+        assert expected in cards[key]['status']
 
 
 def test_closed_minutes_week_holiday_and_long_window():

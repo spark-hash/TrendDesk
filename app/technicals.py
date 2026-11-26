@@ -71,13 +71,18 @@ def geometry(bars):
     for key,title in [('support','支撑'),('resistance','阻力')]:
         candidates = [z for z in zones if (mean(z['prices'])<last if key=='support' else mean(z['prices'])>last)]
         candidates.sort(key=lambda z:abs(mean(z['prices'])-last))
-        for rank,z in enumerate(candidates[:2],1):
+        nearest=candidates[:4]
+        if candidates:
+            strongest=max(candidates,key=lambda z:z['touches'])
+            if strongest not in nearest: nearest.append(strongest)
+        for rank,z in enumerate(nearest,1):
             price = mean(z['prices'])
             strength = '强' if z['touches']>=3 else '中' if z['touches']==2 else '弱'
             name = f'{title} {rank}'
             cards[f'{key}{rank}'] = card(name,f'{price:.2f} · {strength}',f"独立测试 {z['touches']} 次，最近测试 {bars[z['last']]['time'][:16]} ET。",
                 '两侧各 2 根确认拐点；0.4 ATR 内聚类，触点至少相隔 3 根。强弱按测试次数分级。')
-            lines.append([name,bars[0]['time'],price,bars[-1]['time'],price])
+            lines.append([name,bars[0]['time'],price,bars[-1]['time'],price,
+                          {'strength':strength,'touches':z['touches']}])
         if not candidates: cards[key]=card(title,'当前价格一侧没有已确认的拐点区域')
     base = bars[-21:-1]
     top,bottom=max(b['high'] for b in base),min(b['low'] for b in base)
@@ -89,6 +94,21 @@ def geometry(bars):
     if flat:
         for name,value in [('平台上沿',top),('平台下沿',bottom)]:
             lines.append([name,base[0]['time'],value,bars[-1]['time'],value])
+    # Retain up to two older non-overlapping consolidations in the displayed window.
+    boundary=len(bars)-21 if flat else len(bars)-2
+    found=0
+    while boundary>=20 and found<2:
+        window=bars[boundary-20:boundary]
+        unit=atr(window)
+        high=max(b['high'] for b in window)
+        low=min(b['low'] for b in window)
+        if unit and high-low<=4*unit and abs(window[-1]['close']-window[0]['close'])<=unit:
+            found+=1
+            for edge,value in [('上沿',high),('下沿',low)]:
+                lines.append([f'平台历史 {found} {edge}',window[-1]['time'],value,bars[-1]['time'],value])
+            boundary-=20
+        else:
+            boundary-=1
     cards.update(patterns(bars,unit,high_p,low_p))
     return cards,lines
 
@@ -116,6 +136,12 @@ def patterns(bars,unit,highs,lows):
                     evidence=[f'拐点价格 '+ ' / '.join(f'{bars[i][field]:.2f}' for i in ids),
                               f'当前颈线 {sign*neck:.2f}，最近拐点 {bars[ids[-1]]["time"][:16]} ET。']
             cards[key+str(count)]=card(title,label,*evidence)
+            if label!='未识别':
+                turns=sorted([(i,bars[i][field]) for i in ids]+[(i,sign*troughs[i]) for i in neck_ids])
+                cards[key+str(count)]['overlay']={
+                    'points':[[bars[i]['time'],price] for i,price in turns],
+                    'neck':[[bars[neck_ids[0]]['time'],sign*troughs[neck_ids[0]]],[b['time'],sign*neck]],
+                    'pending':label.startswith('候选')}
             if label=='收盘越过颈线':
                 cards[key+str(count)]['anchor']=bars[ids[-1]]['time']
     ao,ac,bo,bc=a['open'],a['close'],b['open'],b['close']
@@ -131,4 +157,7 @@ def patterns(bars,unit,highs,lows):
         ('doji','十字星',spread>0 and body<=0.1*spread,'实体不超过本根振幅的 10%')]:
         label=('阳线' if bc>bo else '阴线') if active and key in ('harami','engulf') else '出现' if active else '未出现'
         cards[key]=card(title,label,rule,f'前根开收 {ao:.2f} / {ac:.2f}；本根开高低收 {bo:.2f} / {b["high"]:.2f} / {b["low"]:.2f} / {bc:.2f}。')
+        if active:
+            candles=[b] if key=='doji' else [a,b]
+            cards[key]['overlay']={'candles':[[c['time'],c['low'],c['high']] for c in candles]}
     return cards

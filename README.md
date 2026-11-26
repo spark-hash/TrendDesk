@@ -6,7 +6,7 @@
 
 从 [GitHub Releases](https://github.com/spark-hash/TrendDesk/releases/latest) 下载 `TrendDesk-Windows-x64.zip`。完整解压后，双击 `TrendDesk.exe` 启动本机服务并打开工作台。发布包自带 Python。实时行情需要先登录 Moomoo OpenD。要停止后台，在 Windows 通知区域右键 TrendDesk，选择「退出并停止服务」。
 
-桌面版启动后及运行期间每 6 小时检查一次 GitHub 稳定版。新版在后台下载，按 GitHub 提供的 SHA-256 校验后暂存于 `%LOCALAPPDATA%\TrendDesk\versions`。从托盘退出再双击原入口，即可启用已下载的新版。下载失败会延后重试，未能启动的新版会回退到可启动的版本。更新与用户数据库分开存放。
+从托盘右键菜单选择「检查更新…」查看 GitHub 稳定版。点击确认后才下载并校验 SHA-256，退出托盘服务后重新打开原入口以启用新版。
 
 在已安装依赖的开发环境中，运行 `.\.venv\Scripts\python.exe scripts/package_windows.py` 可重新生成 ZIP。
 

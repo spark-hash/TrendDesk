@@ -4,86 +4,122 @@
   const colors=['#94d8b0','#e9bd75','#90b7e4','#cb9fdb'];
   let section='structure', data=null, key='', generation=0, pending=false, last=0, visible=false;
   let aiSeq=0, aiBusy=false, aiText='';
-  const context=()=>[mode,selected,section,$('study-tf').value].join('/');
+  let period='1D',windowSize=null,firstSlot=null,pan=null;
+  const selectedPatterns=new Set();
+  const priceChart=createPriceChart($('study-candles'),$('study-price-info'),'study',()=>({
+    bars:data?.candles,tf:period,lines:data?.lines,zones:data?.cross_levels,
+    canScore:mode==='live'&&data?.symbol===selected&&data?.tf===period,
+    showLines:$('technical-lines').checked,showCross:$('study-cross').checked,
+    patterns:Object.entries(data?.sections.structure||{}).filter(([id,v])=>selectedPatterns.has(id)&&v.overlay)
+  }));
+  function viewport(total){
+    const count=Math.min(total,windowSize??(section==='structure'?80:total));
+    const maxStart=total-Math.max(1,Math.ceil(count*.2));
+    return {count,start:Math.max(0,Math.min(maxStart,firstSlot??total-count))};
+  }
+  function resetView(){windowSize=null;firstSlot=null;pan=null}
+  function zoom(total,factor,anchor=.5){
+    const old=viewport(total);
+    windowSize=Math.min(total,Math.max(Math.min(12,total),Math.round(old.count*factor)));
+    firstSlot=Math.round(old.start+(old.count-windowSize)*Math.max(0,Math.min(1,anchor)));
+    render();
+  }
+  const fieldMeaning={close:'分钟收盘价（美元）',vwap:'当日累计成交量加权均价（美元）',volume:'该分钟成交股数',
+    dif:'MACD 快慢指数均线之差',dea:'DIF 的信号均线',hist:'MACD 柱 · DIF 与 DEA 的差值',rsi:'14 周期 RSI · 涨跌动量，范围 0–100'};
+  const context=()=>[mode,selected,section,period].join('/');
   function resetAI(){
     aiSeq++; aiBusy=false; aiText=''; $('study-answer').textContent='';
   }
   function metricButton(id,label){
     return '<button class="text-button" data-study-ai="'+esc(id)+'"'+(aiBusy?' disabled':'')+'>'+esc(label)+'</button>';
   }
-  function plot(rows,fields,{candles=false,lines=[],boxes=[],events=[],title,range=null,minute=false}){
+  function plot(rows,fields,{lines=[],boxes=[],events=[],title,range=null,minute=false}){
     if(!rows.length)return '';
-    const W=900,H=candles||fields[0]==='close'?210:94,L=10,R=68,T=10,B=20;
-    const values=rows.flatMap(b=>candles?[b.low,b.high]:fields.map(k=>b[k]).filter(Number.isFinite));
-    values.push(...lines.flatMap(line=>[line[2],line[4]]));
-    values.push(...boxes.flatMap(box=>[box.top,box.bottom]));
-    if(!values.length)return '';
-    const low=range?range[0]:Math.min(...values),high=range?range[1]:Math.max(...values);
-    const span=high-low||Math.max(0.01,Math.abs(low)*0.002);
+    const W=Math.max(160,$('study-chart').clientWidth),H=fields[0]==='close'?210:94,L=10,R=68,T=10,B=20;
     const minuteOf=time=>Number(time.slice(11,13))*60+Number(time.slice(14,16));
     const axis=rows.map((b,i)=>minute?minuteOf(b.time)-570:i);
-    const units=Math.max(1,axis.at(-1)+1);
-    const dx=(W-L-R)/units;
-    const x=i=>L+(axis[i]+0.5)*dx,y=v=>T+(high-v)/span*(H-B-T);
-    const indices=new Map(rows.map((b,i)=>[b.time,i]));
+    const units=Math.max(1,axis.at(-1)+1),{count,start}=viewport(units);
+    const dx=(W-L-R)/count,indices=new Map(rows.map((b,i)=>[b.time,i]));
+    const visible=axis.map((slot,i)=>slot>=start&&slot<start+count?i:-1).filter(i=>i>=0);
+    const values=visible.flatMap(i=>fields.map(k=>rows[i][k]).filter(Number.isFinite));
+    for(const [,t1,a,t2,b] of lines){
+      const l=axis[indices.get(t1)],r=axis[indices.get(t2)];
+      if(!(r>l)||r<start||l>=start+count)continue;
+      for(const slot of [Math.max(l,start),Math.min(r,start+count-1)])values.push(a+(b-a)*(slot-l)/(r-l));
+    }
+    for(const box of boxes)if(axis[indices.get(box.end)]>=start&&axis[indices.get(box.start)]<start+count)values.push(box.bottom,box.top);
+    if(!values.length&&!range)values.push(...rows.flatMap(b=>fields.map(k=>b[k]).filter(Number.isFinite)));
+    if(!values.length&&!range)return '';
+    if(fields.includes('hist'))values.push(0);
+    const low=range?range[0]:Math.min(...values),high=range?range[1]:Math.max(...values);
+    const span=high-low||Math.max(0.01,Math.abs(low)*0.002);
+    const x=i=>L+(axis[i]+0.5-start)*dx,y=v=>T+(high-v)/span*(H-B-T);
     let svg='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+esc(title)+'">';
+    for(const v of [low,(low+high)/2,high]){
+      const tick=number(v,fields[0]==='dif'?3:2);
+      svg+='<g data-plot-hint="纵轴刻度 · '+tick+'"><line x1="'+L+'" x2="'+(W-R)+'" y1="'+y(v)+'" y2="'+y(v)+'" stroke="#303c39"/><text x="'+(W-R+5)+'" y="'+(y(v)+4)+'">'+tick+'</text></g>';
+    }
+    svg+='<svg x="'+L+'" width="'+(W-R-L)+'" height="'+H+'" viewBox="'+L+' 0 '+(W-R-L)+' '+H+'" overflow="hidden">';
     for(const box of boxes){
       const x1=x(indices.get(box.start)),x2=x(indices.get(box.end)),confirm=x(indices.get(box.formed));
       const when=new Date(Date.parse(box.formed)+60000).toLocaleTimeString('en-GB',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit'});
       const label='平台于 '+when+' ET 首次确认 · '+number(box.bottom)+'–'+number(box.top)+' · 上沿 '+box.highs+' 次 / 下沿 '+box.lows+' 次';
       svg+='<g data-plot-hint="'+esc(label)+'"><rect x="'+x1+'" y="'+y(box.top)+'" width="'+(x2-x1)+'" height="'+(y(box.bottom)-y(box.top))+'" fill="#cb9fdb" fill-opacity=".13" stroke="#cb9fdb" stroke-opacity=".6"/><path d="M'+confirm+' '+y(box.top)+'V'+y(box.bottom)+'" stroke="#cb9fdb" stroke-dasharray="2 2"/></g>';
     }
-    for(const v of [low,(low+high)/2,high]){
-      svg+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+y(v)+'" y2="'+y(v)+'" stroke="#303c39"/><text x="'+(W-R+5)+'" y="'+(y(v)+4)+'">'+number(v,fields[0]==='dif'?3:2)+'</text>';
-    }
-    if(candles)rows.forEach((b,i)=>{
-      const c=b.close>=b.open?colors[0]:'#df998b';
-      svg+='<path stroke="'+c+'" d="M'+x(i)+' '+y(b.low)+'V'+y(b.high)+'"/><rect fill="'+c+'" x="'+(x(i)-dx*.31)+'" y="'+Math.min(y(b.open),y(b.close))+'" width="'+dx*.62+'" height="'+Math.max(.8,Math.abs(y(b.open)-y(b.close)))+'"/>';
-    });
     fields.forEach((k,j)=>{
       if(k==='hist'||k==='volume'){
-        for(const [i,b] of rows.entries()){
+        for(const i of visible){
+          const b=rows[i];
           if(!Number.isFinite(b[k]))continue;
-          svg+='<rect x="'+(x(i)-dx*.35)+'" y="'+Math.min(y(0),y(b[k]))+'" width="'+Math.max(.7,dx*.7)+'" height="'+Math.max(.6,Math.abs(y(0)-y(b[k])))+'" fill="'+(k==='volume'?colors[2]:b[k]>=0?colors[0]:'#df998b')+'" opacity=".5"/>';
+          svg+='<rect data-plot-hint="'+fieldMeaning[k]+'" x="'+(x(i)-dx*.35)+'" y="'+Math.min(y(0),y(b[k]))+'" width="'+Math.max(.7,dx*.7)+'" height="'+Math.max(.6,Math.abs(y(0)-y(b[k])))+'" fill="'+(k==='volume'?colors[2]:b[k]>=0?colors[0]:'#df998b')+'" opacity=".5"/>';
         }
         return;
       }
       let path='',prev=-2;
-      rows.forEach((b,i)=>{
-        if(!Number.isFinite(b[k]))return;
+      visible.forEach(i=>{
+        const b=rows[i];if(!Number.isFinite(b[k]))return;
         path+=(axis[i]===prev+1?'L':'M')+x(i)+' '+y(b[k])+' ';prev=axis[i];
       });
-      svg+='<path d="'+path+'" stroke="'+colors[j]+'" stroke-width="1.8" fill="none"/>';
+      svg+='<g data-plot-hint="'+fieldMeaning[k]+'"><path d="'+path+'" stroke="'+colors[j]+'" stroke-width="1.8" fill="none"/><path d="'+path+'" stroke="transparent" stroke-width="8" fill="none"/></g>';
     });
-    for(const [name,t1,v1,t2,v2] of lines){
+    for(const [name,t1,v1,t2,v2,level] of lines){
       if(!indices.has(t1)||!indices.has(t2))continue;
       const col=name.startsWith('通道')?colors[2]:name.startsWith('平台')?colors[3]:name.startsWith('支撑')?colors[0]:colors[1];
-      const hint=name+' · 最新窗口拟合或测算 · 起点 '+number(v1)+' / 终点 '+number(v2);
+      const hint=name+' · 最新窗口拟合或测算 · 起点 '+number(v1)+' / 终点 '+number(v2)+levelHint(level);
       const path='M'+x(indices.get(t1))+' '+y(v1)+'L'+x(indices.get(t2))+' '+y(v2);
-      svg+='<g data-plot-hint="'+esc(hint)+'"><path fill="none" stroke="'+col+'" stroke-dasharray="6 4" d="'+path+'"/><path fill="none" stroke="transparent" stroke-width="9" d="'+path+'"/></g>';
+      svg+='<g data-plot-hint="'+esc(hint)+'"><path fill="none" stroke="'+col+'" stroke-width="'+levelStyle(level).width+'" stroke-dasharray="'+levelStyle(level).dash+'"  d="'+path+'"/><path fill="none" stroke="transparent" stroke-width="9" d="'+path+'"/></g>';
+    }
+    if((fields[0]==='close')&&$('study-cross').checked&&visible.includes(rows.length-1)){
+      svg+=crossOverlay(data.cross_levels,low,high,y,L,x(rows.length-1),'data-plot-hint');
     }
     const markColors={formed:'#cb9fdb',first:'#e9bd75',confirmed:'#94d8b0',returned:'#df998b'};
     for(const event of events){
       const label=esc(event.at.slice(11,16)+' ET · '+event.status);
       svg+='<circle data-plot-event="'+esc(event.id)+'" tabindex="0" aria-label="'+label+'" cx="'+x(indices.get(event.time))+'" cy="'+y(event.price)+'" r="4" fill="'+markColors[event.stage]+'" stroke="#18201e"><title>'+label+'</title></circle>';
     }
-    for(const i of [...new Set([0,Math.floor(rows.length/2),rows.length-1])]){
+    for(const i of new Set([visible[0],visible[Math.floor(visible.length/2)],visible.at(-1)].filter(Number.isInteger))){
       const dt=rows[i].time;
       const label=minute?new Date(Date.parse(dt)+60000).toLocaleTimeString('en-GB',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit'}):data?.tf==='1M'?dt.slice(0,7):dt.slice(5,10)+(data?.tf?.endsWith('m')||data?.tf==='4h'?' '+dt.slice(11,16):'');
-      svg+='<text x="'+x(i)+'" y="'+(H-2)+'" text-anchor="'+(i===0?'start':i===rows.length-1?'end':'middle')+'">'+esc(label)+'</text>';
+      svg+='<text data-plot-hint="时间刻度 · '+esc(label)+' ET" x="'+x(i)+'" y="'+(H-2)+'" text-anchor="'+(i===visible[0]?'start':i===visible.at(-1)?'end':'middle')+'">'+esc(label)+'</text>';
     }
-    return '<figure data-fields="'+fields.join(',')+'"><figcaption>'+esc(title)+'</figcaption>'+svg+'</svg><output class="chart-tip" hidden></output></figure>';
+    return '<figure data-units="'+units+'" data-fields="'+fields.join(',')+'"><figcaption>'+esc(title)+'</figcaption>'+svg+'</svg></svg><output class="chart-tip" hidden></output></figure>';
   }
   function render(){
+    const minute=section==='intraday', rows=minute?data?.minutes:data?.candles;
+    pointScores.sync('study',selected,minute?'1m':period,mode==='live'&&['structure','intraday'].includes(section)&&!!rows?.length,
+      minute&&data?.minute_score?{...data.minute_score,at:rows.at(-1).time,cutoff:data.minute_score.as_of}:null);
     const expanded=$('study-inactive')?.open;
     $('study-heading').textContent=selected+' · 个股研究';
     $('study-journal-link').hidden=section==='fundamental'||mode!=='live';
     $('study-tf-label').hidden=section!=='structure';
+    for(const b of $('study-periods').children){b.classList.toggle('active',b.dataset.period===period);b.setAttribute('aria-pressed',String(b.dataset.period===period))}
+    $('plot-tools').hidden=!(mode==='live' && (section==='structure'?data?.candles?.length:section==='intraday'&&data?.minutes?.length));
+    $('study-price').hidden=section!=='structure'||mode!=='live'||!data?.candles?.length;
     $('study-chart').innerHTML=''; $('study-cards').innerHTML=''; $('study-section-action').innerHTML='';
     $('minute-events').replaceChildren();
     $('study-layers').hidden=mode!=='live'||!['structure','intraday'].includes(section);
     for(const input of $('study-layers').querySelectorAll('input'))
-      input.parentElement.hidden=input.id==='technical-lines'?section!=='structure':section!=='intraday';
+      input.parentElement.hidden=input.id==='study-cross'?false:input.id==='technical-lines'?section!=='structure':section!=='intraday';
     $('study-answer').textContent=aiText;
     if(mode!=='live'){ $('study-status').textContent='切换到实时工作台可查看真实数据研究。';return; }
     if(!data){$('study-status').textContent='正在读取行情与研究数据…';return;}
@@ -99,7 +135,7 @@
     if(section==='structure')status+=periodNote(data.tf);
     $('study-status').textContent=status;
     if(section==='structure'){
-      $('study-chart').innerHTML=plot(data.candles,[],{candles:true,lines:$('technical-lines').checked?data.lines:[],title:'价格结构 · 蓝色通道 / 绿色支撑 / 金色阻力 / 紫色平台'});
+      priceChart.draw();
     }else if(section==='intraday'){
       const rows=data.minutes;
       const overlay=data.intraday_overlay||{lines:[],boxes:[],events:[]};
@@ -123,8 +159,8 @@
     if(!Object.keys(items).length)return;
     $('study-section-action').innerHTML=metricButton('all','AI 解读整个'+sections[section]+' ↗');
     const card=([id,v])=>
-      '<article><div class="rule-heading"><h4>'+esc(v.title)+'</h4>'+metricButton(id,'AI 解读')+'</div><strong>'+esc(v.status)+'</strong>'+
-      v.facts.map(f=>'<p>'+esc(f)+'</p>').join('')+(v.url?'<a class="text-button" href="'+esc(v.url)+'" target="_blank" rel="noreferrer">查看 SEC 原始披露 ↗</a>':'')+'</article>';
+      '<article'+(v.overlay?' data-shape="'+esc(id)+'"':'')+'><div class="rule-heading"><h4>'+esc(v.title)+'</h4>'+metricButton(id,'AI 解读')+'</div><strong>'+esc(v.status)+'</strong> '+gradeBadge(studyGrade(id,v,data,section))+
+      (v.overlay?'<button type="button" class="pattern-toggle" aria-pressed="'+selectedPatterns.has(id)+'">'+(selectedPatterns.has(id)?'隐藏形态':'在图上显示')+'</button>':'')+v.facts.map(f=>'<p>'+esc(f)+'</p>').join('')+(v.url?'<a class="text-button" href="'+esc(v.url)+'" target="_blank" rel="noreferrer">查看 SEC 原始披露 ↗</a>':'')+'</article>';
     const entries=Object.entries(items);
     if(section!=='structure'){$('study-cards').innerHTML=entries.map(card).join('');return;}
     const patterns=new Set(['top2','bottom2','top3','bottom3','harami','engulf','inside','doji']);
@@ -143,12 +179,12 @@
   }
   async function sync(force=false){
     const next=context();
-    if(key!==next){key=next;generation++;pending=false;data=null;last=0;resetAI();render();}
+    if(key!==next){key=next;selectedPatterns.clear();data=null;priceChart.reset();resetView();generation++;pending=false;last=0;resetAI();render();}
     if(mode!=='live'||(!visible&&!force)||pending||(!force&&Date.now()-last<60000))return;
     pending=true;
     const g=generation;
     try{
-      const response=await request('/api/studies/'+encodeURIComponent(selected)+'?tf='+$('study-tf').value+'&section='+section,'GET',undefined,45000);
+      const response=await request('/api/studies/'+encodeURIComponent(selected)+'?tf='+period+'&section='+section,'GET',undefined,45000);
       if(g===generation){if(data?.times[section]!==response.times[section])resetAI();data=response;render();}
     }catch(e){if(g===generation){data=null;render();$('study-status').textContent='研究更新失败 · '+e.message;}}
     finally{if(g===generation){last=Date.now();pending=false;}}
@@ -157,14 +193,16 @@
     if(section!==name){section=name;resetAI();}
     sync();
   };
-  $('study-tf').onchange=()=>sync(true);
+  window.setStudyPeriod=tf=>{period=tf};
+  $('study-periods').onclick=e=>{const b=e.target.closest('[data-period]');if(b&&period!==b.dataset.period){period=b.dataset.period;sync(true)}};
   $('study-journal-link').addEventListener('click',()=>{
     $('journal-scope').value='current';
     $('journal-kind').value=section==='longterm'?'timing':'';
-    $('journal-tf').value=section==='intraday'?'1m':section==='longterm'?'1D':$('study-tf').value;
+    $('journal-tf').value=section==='intraday'?'1m':section==='longterm'?'1D':period;
   });
   $('study-refresh').onclick=()=>sync(true);
   for(const input of $('study-layers').querySelectorAll('input'))bindLayer(input.id,render);
+  const plotWidth=svg=>svg.viewBox.baseVal.width-78;
   function showHint(e){
     const figure=e.target.closest('figure');
     if(!figure||!data)return;
@@ -179,11 +217,12 @@
     const rows=section==='intraday'?data.minutes:data.candles;
     const minute=t=>Number(t.slice(11,13))*60+Number(t.slice(14,16))-570;
     const count=section==='intraday'?minute(rows.at(-1).time)+1:rows.length;
-    const slot=Math.floor((coords.x-10)*count/(900-68-10));
+    const slot=Math.floor((coords.x-10)*viewport(count).count/plotWidth(svg))+viewport(count).start;
     const row=section==='intraday'?rows.find(b=>minute(b.time)===slot):rows[slot];
     const hint=e.target.closest('[data-plot-hint]')?.dataset.plotHint;
-    if(!row&&!event){tip.hidden=true;return;}
+    if(!row&&!event&&!hint&&(coords.x<10||coords.x>svg.viewBox.baseVal.width-68)){tip.hidden=true;return;}
     if(event)tip.textContent=event.status+'\n'+event.facts.join('\n');
+    else if(!row)tip.textContent=hint||(slot>=count?'未来区域 · 尚无行情数据':'此时段缺少行情');
     else{
       const names={close:'收',vwap:'VWAP',volume:'量',dif:'DIF',dea:'DEA',hist:'柱',rsi:'RSI',open:'开',high:'高',low:'低'};
       const fields=figure.dataset.fields?figure.dataset.fields.split(','):['open','high','low','close'];
@@ -195,10 +234,69 @@
     tip.style.top=Math.max(0,clientY-rect.top-tip.offsetHeight-7)+'px';
   }
   const charts=$('study-chart');
-  for(const name of ['pointermove','pointerdown','focusin'])charts.addEventListener(name,showHint);
+  let plotWidthSeen=0;
+  new ResizeObserver(([entry])=>{
+    const width=entry.contentRect.width;
+    if(width===plotWidthSeen)return;
+    plotWidthSeen=width;
+    if(width&&section==='intraday'&&data)render();
+  }).observe(charts);
+  charts.addEventListener('focusin',showHint);
+  charts.addEventListener('pointerdown',e=>{
+    const figure=e.target.closest('figure');
+    if(!figure||e.button!==0||!e.target.closest('svg'))return;
+    const svg=figure.querySelector('svg'),units=Number(figure.dataset.units);
+    const view=viewport(units);pan={x:e.clientX,y:e.clientY,at:pointAt(e),moved:false,start:view.start,units,count:view.count,step:svg.getScreenCTM().a*plotWidth(svg)/view.count};
+    charts.setPointerCapture(e.pointerId);showHint(e);
+  });
+  charts.addEventListener('pointermove',e=>{
+    if(!pan){showHint(e);return}
+    if(Math.hypot(pan.x-e.clientX,pan.y-e.clientY)>=5)pan.moved=true;
+    const next=Math.max(0,Math.min(pan.units-Math.max(1,Math.ceil(pan.count*.2)),pan.start+Math.round((pan.x-e.clientX)/pan.step)));
+    if(next!==firstSlot){firstSlot=next;render()}
+  });
+  function pointAt(e){
+    const figure=e.target.closest('figure');if(!figure||!data||!e.target.closest('svg'))return null;
+    const svg=figure.querySelector('svg'),p=new DOMPoint(e.clientX,e.clientY).matrixTransform(svg.getScreenCTM().inverse());
+    if(p.x<10||p.x>=svg.viewBox.baseVal.width-68)return null;
+    const view=viewport(Number(figure.dataset.units)),slot=view.start+Math.floor((p.x-10)*view.count/plotWidth(svg));
+    if(section==='structure')return data.candles[slot]?.time;
+    return data.minutes.find(b=>Number(b.time.slice(11,13))*60+Number(b.time.slice(14,16))-570===slot)?.time;
+  }
+  function pick(time){
+    if(time)pointScores.pick('study',time);else toast('该位置没有已收盘行情');
+  }
+  charts.addEventListener('contextmenu',e=>{if(e.target.closest('svg')){e.preventDefault();pick(pointAt(e))}});
+  charts.addEventListener('pointerup',e=>{
+    if(pan&&!pan.moved&&Math.hypot(pan.x-e.clientX,pan.y-e.clientY)<5&&pointScores.enabled('study'))pick(pan.at);
+  });
+  charts.addEventListener('lostpointercapture',()=>pan=null);
+  charts.addEventListener('dblclick',()=>{resetView();render()});
+  charts.addEventListener('wheel',e=>{
+    const f=e.target.closest('figure');if(!f)return;e.preventDefault();
+    const svg=f.querySelector('svg'),point=new DOMPoint(e.clientX,e.clientY).matrixTransform(svg.getScreenCTM().inverse());
+    zoom(Number(f.dataset.units),e.deltaY<0?.8:1.25,(point.x-10)/plotWidth(svg));
+  },{passive:false});
+  $('plot-tools').onclick=e=>{
+    const action=e.target.closest('[data-zoom]')?.dataset.zoom,f=charts.querySelector('figure');
+    if(section==='structure'&&action){if(action==='reset')priceChart.reset();else priceChart.zoom(action==='in'?-10:10);return}
+    if(!action||!f)return;
+    if(action==='reset'){resetView();render()}else zoom(Number(f.dataset.units),action==='in'?.8:1.25);
+  };
   function clearTips(){for(const tip of charts.querySelectorAll('output'))tip.hidden=true;}
   charts.addEventListener('pointerout',e=>{if(e.target.closest('figure')!==e.relatedTarget?.closest?.('figure'))clearTips();});
   charts.addEventListener('focusout',clearTips);
+  $('study-cards').addEventListener('click',e=>{
+    const row=e.target.closest('[data-shape]');
+    if(!row||e.target.closest('[data-study-ai],a'))return;
+    const id=row.dataset.shape,button=row.querySelector('.pattern-toggle'),shape=data?.sections.structure?.[id];
+    if(!shape?.overlay)return;
+    if(selectedPatterns.has(id))selectedPatterns.delete(id);
+    else{selectedPatterns.add(id);priceChart.reveal(shape.overlay)}
+    button.setAttribute('aria-pressed',String(selectedPatterns.has(id)));
+    button.textContent=selectedPatterns.has(id)?'隐藏形态':'在图上显示';
+    priceChart.draw();
+  });
   $('studies').addEventListener('click',async e=>{
     const button=e.target.closest('[data-study-ai]');
     if(!button||aiBusy||!data||key!==context())return;

@@ -9,6 +9,8 @@ from .provider import MoomooProvider
 from .filings import financials
 from .technicals import card, geometry, pivots
 from .intraday_structure import replay
+from .point_score import minute_score
+from .cross_levels import ranked_zones
 
 def ema(values,period):
     out=[]
@@ -69,7 +71,9 @@ def minute_series(bars):
             total=volume=0
         total+=mean((b['high'],b['low'],b['close']))*b['volume']
         volume+=b['volume']
-        rows.append(b|{'vwap':total/volume if volume else None,'dif':dif[i],'dea':signal[i],
+        prev_vol=sum(row['volume'] for row in bars[i-20:i]) if i>=20 else 0
+        rows.append(b|{'volume_ratio20':b['volume']*20/prev_vol if prev_vol else None,
+                       'vwap':total/volume if volume else None,'dif':dif[i],'dea':signal[i],
                        'hist':dif[i]-signal[i] if signal[i] is not None else None,'rsi':rsi[i]})
     return rows
 
@@ -132,6 +136,18 @@ class StudyFeed:
         self.guard=Lock()
         self.locks={}
         self.cache={}
+        self.level_cache={}
+
+    def cross_levels(self,code,now):
+        with self.guard:
+            saved=self.level_cache.get(code)
+            if saved and monotonic()<saved[0]: return saved[1]
+        frames=closed_frames(lambda t:self.engine.store.bars(code,t),now)
+        zones=ranked_zones(frames,{tf:geometry(rows) for tf,rows in frames.items()},now)
+        with self.guard:
+            if len(self.level_cache)>=64: self.level_cache.clear()
+            self.level_cache[code]=(monotonic()+30,zones)
+        return zones
 
     def external(self,code,now,section):
         port=self.engine.store.settings()['port']
@@ -187,6 +203,7 @@ class StudyFeed:
             if section!='longterm':
                 self.structure(result,code,tf,now)
         if section in ('intraday','all'):
+            if section=='intraday': result['cross_levels']=self.cross_levels(code,now)
             ext=self.external(code,now,'intraday')
             intr,points=intraday(ext['minute'])
             overlay=replay(points)
@@ -202,6 +219,7 @@ class StudyFeed:
             result['errors'].update(ext['errors'])
             if points:
                 final=parse_time(points[-1]['time'])
+                result['minute_score']=minute_score(points,len(points)-1)
                 count=int((final-bounds(points[-1]['time'][:10])[0]).total_seconds()//60)+1
                 result['minute_gaps']=max(0,count-len({b['time'] for b in points}))
         if section in ('fundamental','all'):
@@ -216,16 +234,13 @@ class StudyFeed:
         bars=frames[tf]
         studies={t:geometry(rows) for t,rows in frames.items()}
         structure,lines=studies[tf]
-        levels=[]
-        for t in TIME_LABELS:
-            items=studies[t][0]
-            sup=items.get('support1',{}).get('status','暂无')
-            res=items.get('resistance1',{}).get('status','暂无')
-            asof=bar_end(frames[t][-1],t) if frames[t] else None
-            stamp=asof.astimezone(ET).strftime('%m-%d %H:%M') if asof else '—'
-            levels.append(f'{TIME_LABELS[t]} · 支撑 {sup} / 阻力 {res} · {stamp} ET')
-        structure={'levels':card('跨周期关键位','最近支撑与阻力',*levels),**structure}
-        result.update(candles=bars[-120:],lines=lines)
+        zones=ranked_zones(frames,studies,now)
+        result['cross_levels']=zones
+        levels=[f"{z['side']} #{z['priority']} · {z['low']:.2f}–{z['high']:.2f} · {z['tf']} {z['strength']} · 距收盘 {z['distance']:+.2f}% · {'、'.join(z['periods'])}"
+                for z in zones if z['priority']<=3 or z['near']]
+        structure={'levels':card('跨周期关键位','周期优先 · 另列最近两档',
+            '先按最高周期，再按重合周期数、该周期独立测试次数、距现价远近排序。',*levels),**structure}
+        result.update(candles=bars[-300:],lines=lines)
         result['sections']['structure']=structure
         result['times']['structure']=bar_end(bars[-1],tf).astimezone(ET).isoformat() if bars else None
         if not bars or bar_end(bars[-1],tf)<expected_last_close(tf,now):

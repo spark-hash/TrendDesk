@@ -31,7 +31,7 @@ internal static class TrendDesk {
     }
     static void OpenPage() { Process.Start(new ProcessStartInfo(Url) { UseShellExecute = true }); }
     static bool StartCachedRelease(bool quiet) {
-        string cache = Path.Combine(Profile, "versions");
+        string cache = Path.Combine(Profile, "confirmed-versions");
         if (!Directory.Exists(cache)) return false;
         Version current = Assembly.GetExecutingAssembly().GetName().Version;
         var candidates = new SortedList<Version, string>();
@@ -80,7 +80,7 @@ internal static class TrendDesk {
                 return 0;
             }
             Application.EnableVisualStyles();
-            if (!dispatched && ServicePid() == 0 && StartCachedRelease(quiet)) return 0;
+            if (ServicePid() == 0 && StartCachedRelease(quiet)) return 0;
             bool owner;
             using (var mutex = new Mutex(true, @"Local\TrendDesk.Start." + UserId, out owner)) {
                 if (!owner || ServicePid() > 0) {
@@ -122,12 +122,34 @@ internal static class TrendDesk {
                         using (var icon = new NotifyIcon())
                         using (var timer = new System.Windows.Forms.Timer()) {
                             menu.Items.Add("打开工作台", null, (s,e) => OpenPage());
+                            var update = menu.Items.Add("检查更新…");
+                            Process checker = null;
+                            update.Click += (s,e) => {
+                                try {
+                                    var command = new ProcessStartInfo(Path.Combine(root, "runtime", "python.exe"), "-I -B -X utf8 desktop_update.py") {
+                                        WorkingDirectory = Path.Combine(root, "program"), UseShellExecute = false, CreateNoWindow = true
+                                    };
+                                    checker = Process.Start(command);
+                                    update.Enabled = false;
+                                    update.Text = "正在检查更新…";
+                                } catch (Exception err) { MessageBox.Show(err.Message, "TrendDesk 更新"); }
+                            };
+                            menu.Items.Add("关于 TrendDesk", null, (s,e) => {
+                                var version = Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
+                                MessageBox.Show("当前运行版本　v" + version, "关于 TrendDesk", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            });
                             menu.Items.Add("退出并停止服务", null, (s,e) => Application.ExitThread());
                             icon.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
                             icon.Text = "TrendDesk · 美股工作台"; icon.ContextMenuStrip = menu;
                             icon.DoubleClick += (s,e) => OpenPage(); icon.Visible = true;
                             timer.Interval = 500;
-                            timer.Tick += (s,e) => { if (stop.WaitOne(0) || child.HasExited) Application.ExitThread(); };
+                            timer.Tick += (s,e) => {
+                                if (checker != null && checker.HasExited) {
+                                    checker.Dispose(); checker = null;
+                                    update.Enabled = true; update.Text = "检查更新…";
+                                }
+                                if (stop.WaitOne(0) || child.HasExited) Application.ExitThread();
+                            };
                             timer.Start();
                             if (!quiet) OpenPage();
                             Application.Run();

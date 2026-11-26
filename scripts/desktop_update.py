@@ -1,18 +1,19 @@
 """Stage stable releases alongside the current installation; activation belongs to the launcher."""
 import hashlib
 import json
-import logging
 import os
 from pathlib import Path, PureWindowsPath
 import re
 import shutil
 import stat
 import tempfile
-import time
+import sys
 from urllib.request import build_opener, HTTPRedirectHandler, Request
 from urllib.parse import urlsplit
 import zipfile
 
+if __name__ == '__main__':
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
 from app import __version__
 
 REPO = "spark-hash/TrendDesk"
@@ -69,18 +70,18 @@ def unpack(archive, target):
         raise ValueError("Incomplete release")
 
 
-def check_release(cache, fetch=open_release):
+def check_release(cache, confirm, fetch=open_release):
     with fetch(LATEST) as response:
         release = json.loads(response.read(1024**2))
     tag = release.get('tag_name', '')
     version = TAG.fullmatch(tag)
     if release.get('draft') or release.get('prerelease') or not version:
-        return
+        return '没有可用的稳定版更新。'
     if tuple(map(int, version.groups())) <= tuple(map(int, __version__.split('.'))):
-        return
+        return f'当前版本 v{__version__}，GitHub 稳定版 {tag}。无需更新。'
     destination = cache / tag[1:]
     if destination.is_dir():
-        return
+        return f'{tag} 已确认并下载。请从托盘退出后重新打开工作台。'
     asset = next((a for a in release.get('assets', []) if a.get('name') == ASSET), {})
     url = f"https://github.com/{REPO}/releases/download/{tag}/{ASSET}"
     digest = asset.get('digest') or ''
@@ -88,6 +89,8 @@ def check_release(cache, fetch=open_release):
     if (asset.get('browser_download_url') != url or not re.fullmatch(r'sha256:[0-9a-f]{64}', digest)
             or not 0 < size <= MAX_DOWNLOAD):
         raise ValueError("Release asset or SHA-256 unavailable")
+    if not confirm(tag,size):
+        return None
     cache.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=cache, prefix='.download-') as scratch:
         archive = Path(scratch) / ASSET
@@ -105,15 +108,21 @@ def check_release(cache, fetch=open_release):
         staged = Path(scratch) / 'ready'
         unpack(archive, staged)
         staged.rename(destination)
+    return f'{tag} 已通过校验。请在方便时从托盘退出并重新打开工作台，以启用新版。'
 
 
-def monitor_releases():
-    cache = Path(os.environ['LOCALAPPDATA']) / 'TrendDesk' / 'versions'
-    time.sleep(5)
-    while True:
-        try:
-            check_release(cache)
-            time.sleep(6 * 3600)
-        except Exception as error:
-            logging.warning("TrendDesk update check deferred: %s", type(error).__name__)
-            time.sleep(3600)
+if __name__ == '__main__':
+    from ctypes import windll
+
+    def dialog(message, flags):
+        return windll.user32.MessageBoxW(None,message,'TrendDesk 更新',flags | 0x10000)
+
+    def confirm(tag, size):
+        return dialog(f'当前版本 v{__version__}，发现 {tag}（{size/1024**2:.1f} MiB）。\n下载并在下次启动时升级？',
+                      0x24 | 0x100) == 6
+
+    try:
+        result = check_release(Path(os.environ['LOCALAPPDATA'])/'TrendDesk'/'confirmed-versions',confirm)
+        if result: dialog(result,0x40)
+    except Exception as exc:
+        dialog(f'更新未完成，请检查网络后重试。\n{exc}',0x10)

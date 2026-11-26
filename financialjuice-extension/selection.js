@@ -4,7 +4,7 @@
   if (!['http://127.0.0.1:8765','http://localhost:8765'].includes(origin)) return;
   const button = document.createElement('button');
   button.type = 'button';
-  button.textContent = 'AI 解读';
+  button.textContent = '送到工作台翻译 / 解读';
   button.style.cssText = 'position:fixed;z-index:2147483647;border:1px solid #85bda9;border-radius:6px;padding:5px 10px;background:#143a32;color:white;cursor:pointer;font:600 13px sans-serif';
   button.hidden = true;
   document.body.append(button);

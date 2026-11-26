@@ -6,6 +6,33 @@ from fastapi import HTTPException
 from app import advisor
 
 
+def test_entry_score_ai_uses_displayed_snapshot(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import create_app
+    from app.store import Store
+    from app.entry_score import entry_score
+    app = create_app(store=Store(tmp_path/'entry.db'), run_worker=False)
+    condition = dict(group='共同条件', label='示例趋势条件', met=True, max_points=100, evidence='测试行情')
+    item = dict(symbol='AMD', analysis=dict(ready=True, fresh=True, conditions=[condition],
+                bar_close_time='2026-11-25T16:00:00-05:00'), position={'cost':123})
+    market = dict(mode='live', market={'open':False}, items=[item])
+    monkeypatch.setattr(app.state.engine, 'state', lambda code: market)
+    monkeypatch.setattr(advisor.Advisor, 'status', lambda self: {'configured':True})
+    calls = []
+    def capture(self, data, profile, *, scope):
+        calls.append(data)
+        assert profile == 'deep' and scope == 'study'
+        return {'text':'测试解读'}
+    monkeypatch.setattr(advisor.Advisor, 'advise', capture)
+    with TestClient(app, headers={'X-TrendDesk':'local'}) as client:
+        url = '/api/ai/entry-score/AMD'
+        assert client.post(url, params={'snapshot_id':'expired'}).status_code == 409
+        score = entry_score(item, market)
+        r = client.post(url, params={'snapshot_id':score['snapshot_id'], 'profile':'deep'})
+        assert r.status_code == 200 and len(calls) == 1
+        assert calls[0]['evidence'] == score and 'position' not in str(calls)
+
+
 def test_response_cache_errors_and_secrets(monkeypatch):
     monkeypatch.delenv('OPENAI_API_KEY', raising=False)
     api = advisor.Advisor()

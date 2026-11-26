@@ -5,7 +5,7 @@ import os
 import re
 from pathlib import Path
 from typing import Literal
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from urllib.parse import urlsplit
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -20,8 +20,12 @@ from .engine import Engine
 from . import demo
 from .advisor import Advisor, AIConfig, ProfileName, snapshot
 from . import __version__
+from .entry_score import entry_score
+from .point_score import candle_score, history_window, minute_score
+from .timeframes import SOURCES, derive
+from .release_calendar import ReleaseCalendar
 from .backtest import Backtests, STRATEGIES
-from .market import expected_last_close, now_utc, ET
+from .market import bar_end, completed, expected_last_close, now_utc, parse_time, ET
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(os.environ.get('TRENDDESK_DATA_DIR') or ROOT/'data')
@@ -37,9 +41,18 @@ def symbol(value):
 class WatchInput(BaseModel):
     symbol: str
 
+class WatchMove(WatchInput):
+    anchor: str
+    after: bool
+
 class NewsInput(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True,extra='forbid')
     text: str = Field(min_length=1,max_length=1200)
+
+class NewsResearchInput(NewsInput):
+    source: str = Field(default='',max_length=120)
+    url: str = Field(default='',max_length=2048,pattern=r'^(https?://[^\s]+)?$')
+    published: str = Field(default='',max_length=64)
 
 class SettingsInput(BaseModel):
     model_config = ConfigDict(extra='forbid',allow_inf_nan=False)
@@ -84,6 +97,7 @@ class BacktestInput(BaseModel):
 def create_app(store=None, run_worker=True):
     store = store or Store(DATA/'trenddesk.db')
     engine = Engine(store)
+    release_calendar = ReleaseCalendar(store)
     studies = StudyFeed(engine)
     journal = StudyJournal(engine,studies)
     advisor = Advisor(store)
@@ -141,6 +155,10 @@ def create_app(store=None, run_worker=True):
     def macro_environment():
         return macro.read()
 
+    @app.get('/api/macro/calendar')
+    def macro_calendar(refresh: bool=False):
+        return release_calendar.read(refresh)
+
     @app.post('/api/macro/refresh')
     def macro_refresh():
         return macro.read(refresh=True)
@@ -161,6 +179,14 @@ def create_app(store=None, run_worker=True):
     @app.post('/api/news/analysis')
     def news_analysis(value: NewsInput, profile: ProfileName = 'routine'):
         return advisor.advise({'excerpt':value.text}, profile, scope='news')
+
+    @app.post('/api/news/translate')
+    def translate_news(value: NewsInput, profile: ProfileName='routine'):
+        return advisor.advise({'text':value.text},profile,scope='translation')
+
+    @app.post('/api/news/research')
+    def research_news(value: NewsResearchInput, profile: ProfileName='routine'):
+        return advisor.advise(value.model_dump(exclude_defaults=True),profile,scope='news_research')
 
     @app.get('/api/studies/{code}')
     def stock_studies(code: str, tf: str='1D', section: str='all'):
@@ -242,6 +268,67 @@ def create_app(store=None, run_worker=True):
         return advisor.advise({'symbol':market['symbol'],'period':'15 分钟信号及其上级周期条件','as_of':as_of,
             'section':group,'focus':label,'session':market['session'],'evidence':item},profile,scope='study')
 
+    @app.post('/api/ai/entry-score/{code}')
+    def score_analysis(code: str, snapshot_id: str, profile: ProfileName='routine'):
+        code = symbol(code)
+        if not advisor.status()['configured']:
+            raise HTTPException(409,'请先在 AI 接入中保存 Key')
+        market = engine.state(code)
+        item = next((i for i in market['items'] if i['symbol'] == code), None)
+        if item is None:
+            raise HTTPException(404,'请先选择自选股或基准 ETF')
+        score = entry_score(item, market)
+        if score['snapshot_id'] != snapshot_id or score['total'] is None:
+            raise HTTPException(409,'评分已更新或数据不足，请刷新后重试')
+        return advisor.advise(dict(symbol=code, as_of=score['as_of'], section='短线做多开仓评分',
+            focus='解释两套规则的得失分、缺少的确认与失效条件。保留规则原分；分数不代表胜率。',
+            evidence=score),profile,scope='study')
+
+    @app.get('/api/point-score/{code}')
+    def point_score(code: str, tf: str, at: datetime, mode: Literal['live','demo']='live'):
+        code=symbol(code)
+        if at.tzinfo is None or tf not in ('1m',*TIME_LABELS):
+            raise HTTPException(422,'请选择图表上的有效时间和周期')
+        now=now_utc()
+        if mode=='demo':
+            frames=demo.dataset().get(code)
+            if not frames or tf=='1m': raise HTTPException(404,'此标的没有对应的演示行情')
+            chart=frames[tf]
+        elif code not in engine.symbols():
+            raise HTTPException(404,'请先选择自选标的')
+        elif tf=='1m':
+            points=studies.read(code,'1D','intraday')['minutes']
+            index=next((i for i,b in enumerate(points) if parse_time(b['time'])==at),None)
+            if index is None: raise HTTPException(409,'该分钟没有已收盘数据，请刷新分时图')
+            return minute_score(points,index) | {'symbol':code,'tf':tf,'at':at.isoformat(),'cutoff':bar_end(points[index],tf).isoformat()}
+        else:
+            frames=engine.get_bars(code)
+            base=SOURCES.get(tf,tf)
+            bars=frames[base] if base in frames else store.bars(code,base)
+            chart=derive(tf,completed(bars,base,now)) if tf in SOURCES else bars
+        bar=next((b for b in chart if parse_time(b['time'])==at),None)
+        cutoff=bar_end(bar,tf) if bar else None
+        if not cutoff or cutoff+timedelta(seconds=3)>now:
+            raise HTTPException(409,'请选择已经收盘的 K 线，未来留白和未收盘周期无法评分')
+        settings=store.settings()
+        score=candle_score(frames,cutoff,settings)
+        if mode=='live' and score['total'] is None:
+            try:
+                frames=history_window(code,settings['port'],cutoff.astimezone(ET).date(),now.astimezone(ET).date())
+                score=candle_score(frames,cutoff,settings)
+            except (RuntimeError,ValueError,OSError) as exc:
+                raise HTTPException(409,'历史覆盖不足，OpenD 补取失败：'+str(exc)[:160]) from None
+        return score | {'symbol':code,'tf':tf,'at':at.isoformat(),'cutoff':cutoff.isoformat()}
+
+    @app.post('/api/ai/point-score/{code}')
+    def point_score_ai(code: str, tf: str, at: datetime, profile: ProfileName='routine', snapshot_id: str=''):
+        if not advisor.status()['configured']: raise HTTPException(409,'请先在 AI 接入中保存 Key')
+        score=point_score(code,tf,at,'live')
+        if score['total'] is None or (snapshot_id and snapshot_id!=score.get('snapshot_id')):
+            raise HTTPException(409,'评分不可用或快照已更新，请重新选点')
+        return advisor.advise(dict(symbol=score['symbol'],as_of=score['cutoff'],section='历史时点开仓评分',
+            focus='只解释所选时点的得失分与缺少的确认，不推测后续行情或胜率。',evidence=score),profile,scope='study')
+
     @app.post('/api/backtests',status_code=202)
     def backtest_start(value: BacktestInput):
         params=value.model_dump(mode='json')|{'settings':store.settings(),'port':store.settings()['port']}
@@ -276,7 +363,12 @@ def create_app(store=None, run_worker=True):
         selected=symbol(selected)
         if timeframe not in TIME_LABELS or mode not in ('live','demo'):
             raise HTTPException(422,'不支持的周期或模式')
-        return demo.state(selected,timeframe,store.settings()) if mode=='demo' else engine.state(selected,timeframe)
+        result = demo.state(selected,timeframe,store.settings()) if mode=='demo' else engine.state(selected,timeframe)
+        if mode=='live' and result['chart']:
+            result['cross_levels']=studies.cross_levels(selected,now_utc())
+        for item in result['items']:
+            item['entry_score'] = entry_score(item, result)
+        return result
 
     @app.post('/api/watchlist')
     def add_watch(value: WatchInput):
@@ -285,6 +377,13 @@ def create_app(store=None, run_worker=True):
             raise HTTPException(400,'第一版最多监控 50 只自选股')
         store.add(s)
         return {'symbol':s}
+
+    @app.put('/api/watchlist/order')
+    def move_watch(value: WatchMove):
+        try:
+            return store.move_watch(symbol(value.symbol),symbol(value.anchor),value.after)
+        except ValueError as exc:
+            raise HTTPException(409,str(exc))
 
     @app.delete('/api/watchlist/{code}')
     def remove_watch(code: str):

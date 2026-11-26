@@ -140,3 +140,46 @@ def test_macro_analysis_uses_selected_profile_and_fresh_evidence(tmp_path, monke
         assert client.post(url+'&focus=bubble',headers=headers).status_code==200
         focused=json.loads(calls[-1]['input'])
         assert [m['code'] for m in focused['indicators']]==['AIBI'] and not focused['headlines']
+
+def test_news_translation_has_its_own_prompt_and_cache(tmp_path,monkeypatch):
+    from app.main import create_app
+    from app.store import Store
+    monkeypatch.setenv('OPENAI_API_KEY','test-only')
+    prompts=[]
+    def reply(url,**kwargs):
+        payload=kwargs['json']
+        prompts.append(payload['instructions'])
+        return httpx.Response(200,request=httpx.Request('POST',url),json={
+            'status':'completed','model':payload['model'],'usage':{'total_tokens':8},
+            'output':[{'type':'message','content':[{'type':'output_text','text':'利率维持在 4%。'}]}]})
+    monkeypatch.setattr(httpx,'post',reply)
+    with TestClient(create_app(Store(tmp_path/'translate.db'),run_worker=False),headers={'X-TrendDesk':'local'}) as client:
+        body={'text':'Rates stay at 4%.'}
+        for route in ('translate','analysis','translate'):
+            response=client.post('/api/news/'+route,json=body)
+            assert response.status_code==200 and response.json()['text']
+        assert response.json()['cached']
+    assert len(prompts)==2 and '只输出译文' in prompts[0] and '只输出译文' not in prompts[1]
+
+
+def test_headline_research_requires_search_and_clickable_evidence(tmp_path,monkeypatch):
+    from app.main import create_app
+    from app.store import Store
+    monkeypatch.setenv('OPENAI_API_KEY','test-only')
+    note={'type':'url_citation','url':'https://www.federalreserve.gov/','title':'Fed','end_index':2}
+    part={'type':'output_text','text':'公告内容','annotations':[note]}
+    output=[{'type':'message','content':[part]}]
+    def reply(url,**kwargs):
+        payload=kwargs['json']
+        assert payload['tools']==[{'type':'web_search'}] and payload['tool_choice']=='required'
+        assert json.loads(payload['input'])['source']=='美联储公告'
+        return httpx.Response(200,request=httpx.Request('POST',url),json={
+            'status':'completed','model':payload['model'],'output':output})
+    monkeypatch.setattr(httpx,'post',reply)
+    with TestClient(create_app(Store(tmp_path/'search.db'),run_worker=False),headers={'X-TrendDesk':'local'}) as client:
+        def run(): return client.post('/api/news/research',json={'text':'Fed announcement','source':'美联储公告'})
+        assert run().status_code==502
+        output.insert(0,{'type':'web_search_call','status':'completed'})
+        assert run().json()['passages'][0]['citations']==[{'url':note['url'],'title':'Fed','after':2}]
+        note['url']='javascript:void(0)'
+        assert run().status_code==502

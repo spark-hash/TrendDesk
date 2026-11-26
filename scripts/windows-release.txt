@@ -9,7 +9,7 @@ TrendDesk 美股工作台 · Windows x64
 发布包内置 Python 与运行依赖。OpenAI Key 可在「AI 接入与用量」中设置，通过当前 Windows 用户的 DPAPI 加密保存。
 新用户的数据默认位于 %LOCALAPPDATA%\TrendDesk\data。桌面服务日志为该目录中的 desktop-server.log。
 已有工作台可以在服务停止后，将原有 data 文件夹的绝对路径单独写入 %LOCALAPPDATA%\TrendDesk\data-location.txt（UTF-8），使桌面版使用原有设置、自选、回测和当前用户加密保存的密钥。
-桌面版启动后及每隔 6 小时自动检查 spark-hash/TrendDesk 的 GitHub 稳定版，静默下载并校验 SHA-256。托盘退出后，再次双击原入口就会运行已下载的新版。下载或校验失败会延后重试。
-已下载的版本位于 %LOCALAPPDATA%\TrendDesk\versions。请保留自己的数据目录。换电脑或 Windows 用户后，在页面内重新保存 API Key。
+从托盘右键菜单选择「检查更新…」查看 GitHub 稳定版。点击确认后才下载并校验 SHA-256，退出托盘服务后重新打开原入口以启用新版。
+已下载的版本位于 %LOCALAPPDATA%\TrendDesk\confirmed-versions。请保留自己的数据目录。换电脑或 Windows 用户后，在页面内重新保存 API Key。
 
 可选 FinancialJuice 选中文字功能使用压缩包中的 financialjuice-extension 文件夹。

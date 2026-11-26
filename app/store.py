@@ -42,6 +42,9 @@ class Store:
             self.db.execute('DELETE FROM bars')
             self.set('bar_schema',2)
         self.db.commit()
+        if 'sort_index' not in {r[1] for r in self.db.execute('PRAGMA table_info(watchlist)')}:
+            with self.db:
+                self.db.execute('ALTER TABLE watchlist ADD COLUMN sort_index INTEGER')
 
     def get(self, key, default=None):
         with self.lock:
@@ -61,7 +64,18 @@ class Store:
 
     def watchlist(self):
         with self.lock:
-            return [r[0] for r in self.db.execute('SELECT symbol FROM watchlist ORDER BY added,rowid')]
+            return [r[0] for r in self.db.execute('SELECT symbol FROM watchlist ORDER BY sort_index IS NULL,sort_index,added,rowid')]
+
+    def move_watch(self, symbol, anchor, after):
+        with self.lock, self.db:
+            order = self.watchlist()
+            if symbol not in order or anchor not in order:
+                raise ValueError('自选列表已变化，请刷新后再拖动')
+            if symbol != anchor:
+                order.remove(symbol)
+                order.insert(order.index(anchor) + int(after), symbol)
+                self.db.executemany('UPDATE watchlist SET sort_index=? WHERE symbol=?', enumerate(order))
+            return order
 
     def add(self, symbol):
         with self.lock, self.db:
